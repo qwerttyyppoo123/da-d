@@ -1,0 +1,78 @@
+name: Build APK
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install system build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            libtool \
+            libtool-bin \
+            libltdl-dev \
+            m4 \
+            pkg-config \
+            autoconf-archive \
+            autotools-dev \
+            gettext \
+            build-essential \
+            libffi-dev \
+            libbz2-dev \
+            libreadline-dev \
+            libsqlite3-dev \
+            libssl-dev \
+            zlib1g-dev \
+            liblzma-dev \
+            tk-dev \
+            wget \
+            unzip
+
+      - name: Refresh autotools macro cache
+        run: |
+          sudo aclocal -I /usr/share/aclocal || true
+          sudo autoreconf -vfi || true
+
+      - name: Install Android SDK with aidl
+        run: |
+          SDKROOT="$HOME/.buildozer/android/platform/android-sdk"
+          mkdir -p "$SDKROOT/cmdline-tools"
+          cd /tmp
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+          unzip -q cmdline-tools.zip
+          mkdir -p "$SDKROOT/cmdline-tools/latest"
+          mv cmdline-tools/* "$SDKROOT/cmdline-tools/latest/"
+          mkdir -p "$SDKROOT/tools/bin"
+          ln -sf "$SDKROOT/cmdline-tools/latest/bin/sdkmanager" "$SDKROOT/tools/bin/sdkmanager"
+          export PATH="$SDKROOT/cmdline-tools/latest/bin:$SDKROOT/tools/bin:$PATH"
+          yes | sdkmanager --sdk_root="$SDKROOT" --licenses
+          yes | sdkmanager --sdk_root="$SDKROOT" "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+          echo "ANDROIDSDK=$SDKROOT" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$SDKROOT" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$SDKROOT" >> $GITHUB_ENV
+          echo "$SDKROOT/build-tools/33.0.2" >> $GITHUB_PATH
+
+      - name: Install buildozer and python-for-android
+        run: |
+          pip3 install 'buildozer==1.5.0' 'python-for-android==2024.01.21'
+
+      - name: Build APK
+        run: |
+          cd simulator_app
+          buildozer android debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: customsim-apk
+          path: simulator_app/bin/*.apk
